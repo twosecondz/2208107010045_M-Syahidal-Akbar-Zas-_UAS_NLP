@@ -5,51 +5,62 @@ import subprocess
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# path ke folder utilitas STT
+# Path ke folder whisper.cpp
 WHISPER_DIR = os.path.join(BASE_DIR, "whisper.cpp")
 
-# TODO: Lengkapi path ke binary whisper-cli
-# Gunakan os.path.join() untuk menggabungkan WHISPER_DIR, "build", "bin", dan "whisper-cli"
-WHISPER_BINARY = ...
+# Path ke binary whisper-cli
+WHISPER_BINARY = os.path.join(
+    WHISPER_DIR, "build", "bin", "Release", "whisper-cli")
 
-# TODO: Lengkapi path ke file model Whisper (contoh: ggml-large-v3-turbo.bin)
-# Gunakan os.path.join() untuk mengarah ke file model di dalam folder "models"
-WHISPER_MODEL_PATH = ...
+# Path ke file model Whisper
+WHISPER_MODEL_PATH = os.path.join(
+    WHISPER_DIR, "models", "ggml-large-v3-turbo.bin")
+
+# CODE
+
 
 def transcribe_speech_to_text(file_bytes: bytes, file_ext: str = ".wav") -> str:
     """
     Transkrip file audio menggunakan whisper.cpp CLI
+
     Args:
         file_bytes (bytes): Isi file audio
-        file_ext (str): Ekstensi file, default ".wav"
+        file_ext (str): Ekstensi file audio, default ".wav"
+
     Returns:
-        str: Teks hasil transkripsi
+        str: Teks hasil transkripsi, atau pesan error diawali dengan [ERROR]
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-        audio_path = os.path.join(tmpdir, f"{uuid.uuid4()}{file_ext}")
-        result_path = os.path.join(tmpdir, "transcription.txt")
-
-        # simpan audio ke file temporer
-        with open(audio_path, "wb") as f:
-            f.write(file_bytes)
-
-        # jalankan whisper.cpp dengan subprocess
-        cmd = [
-            WHISPER_BINARY,
-            "-m", WHISPER_MODEL_PATH,
-            "-f", audio_path,
-            "-otxt",
-            "-of", os.path.join(tmpdir, "..", "transcription")
-        ]
-
         try:
-            subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            return f"[ERROR] Whisper failed: {e}"
-        
-        # baca hasil transkripsi
-        try:
-            with open(result_path, "r", encoding="utf-8") as result_file:
-                return result_file.read()
-        except FileNotFoundError:
-            return "[ERROR] Transcription file not found"
+            # Simpan audio sementara
+            audio_filename = f"{uuid.uuid4()}{file_ext}"
+            audio_path = os.path.join(tmpdir, audio_filename)
+            with open(audio_path, "wb") as f:
+                f.write(file_bytes)
+
+            # Output tanpa ekstensi, Whisper akan menambahkan .txt otomatis
+            output_base = os.path.join(tmpdir, "transcription")
+
+            # Jalankan whisper.cpp CLI
+            cmd = [
+                WHISPER_BINARY,
+                "-m", WHISPER_MODEL_PATH,
+                "-f", audio_path,
+                "-otxt",
+                "-of", output_base
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                return f"[ERROR] Whisper failed: {result.stderr.strip()}"
+
+            # Baca hasil transkripsi
+            transcription_file = output_base + ".txt"
+            if not os.path.exists(transcription_file):
+                return "[ERROR] Transcription file not found"
+
+            with open(transcription_file, "r", encoding="utf-8") as result_file:
+                return result_file.read().strip()
+
+        except Exception as e:
+            return f"[ERROR] Exception occurred during STT: {str(e)}"
